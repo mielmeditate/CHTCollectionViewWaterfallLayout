@@ -33,6 +33,20 @@ fileprivate func > <T: Comparable>(lhs: T?, rhs: T?) -> Bool {
 
     func collectionView (_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout,
                          sizeForItemAtIndexPath indexPath: IndexPath) -> CGSize
+    
+    func collectionView (_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout,
+                         additionalItemHeightForItemAtIndexPath indexPath: IndexPath, itemWidth: CGFloat) -> CGFloat
+    
+    @objc optional func collectionView (_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, shouldCalculateFullHeightAt indexPath: IndexPath) -> Bool
+    
+    @objc optional func collectionView (_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, fullHeightForItemAtIndexPath indexPath: IndexPath, itemWidth: CGFloat) -> CGFloat
+    
+    // Decoration
+    @objc optional func collectionView (_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, shouldAddDecorationAt indexPath: IndexPath) -> Bool
+    
+    @objc optional func collectionView (_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, decorationViewOfKindAt indexPath: IndexPath) -> String
+    
+    @objc optional func collectionView (_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, frameOfDecorationViewAt indexPath: IndexPath, cellFrame: CGRect) -> CGRect
 
     @objc optional func collectionView (_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout,
                                         heightForHeaderInSection section: Int) -> CGFloat
@@ -243,11 +257,19 @@ public class CHTCollectionViewWaterfallLayout: UICollectionViewLayout {
                 let xOffset = sectionInsets.left + (itemWidth + self.minimumColumnSpacing) * CGFloat(columnIndex)
 
                 let yOffset = ((self.columnHeights[section] as AnyObject).object (at: columnIndex) as AnyObject).doubleValue
-                let itemSize = self.delegate?.collectionView(self.collectionView!, layout: self, sizeForItemAtIndexPath: indexPath)
+                var itemSize: CGSize?
                 var itemHeight: CGFloat = 0.0
-                if itemSize?.height > 0 && itemSize?.width > 0 {
-                    itemHeight = floor(itemSize!.height * itemWidth / itemSize!.width)
+                if self.delegate?.collectionView?(self.collectionView!, layout: self, shouldCalculateFullHeightAt: indexPath) ?? false,
+                    let itemFullHeight = self.delegate?.collectionView?(self.collectionView!, layout: self, fullHeightForItemAtIndexPath: indexPath, itemWidth: itemWidth) {
+                    itemHeight = itemFullHeight
+                } else {
+                    itemSize = self.delegate?.collectionView(self.collectionView!, layout: self, sizeForItemAtIndexPath: indexPath)
+                    if itemSize?.height > 0 && itemSize?.width > 0 {
+                        itemHeight = floor(itemSize!.height * itemWidth / itemSize!.width)
+                    }
                 }
+                // Additional height for the item beyond image area.
+                itemHeight += self.delegate?.collectionView(self.collectionView!, layout: self, additionalItemHeightForItemAtIndexPath: indexPath, itemWidth: itemWidth) ?? 0
 
                 attributes = UICollectionViewLayoutAttributes(forCellWith: indexPath)
                 attributes.frame = CGRect(x: xOffset, y: CGFloat(yOffset!), width: itemWidth, height: itemHeight)
@@ -361,6 +383,26 @@ public class CHTCollectionViewWaterfallLayout: UICollectionViewLayout {
                 attrs.append(attr)
             }
         }
+        
+        // Decoration
+        var decorationAttributesList = [UICollectionViewLayoutAttributes]()
+        for layoutAttributes in attrs {
+            let indexPath = layoutAttributes.indexPath
+            if delegate?.collectionView?(self.collectionView!, layout: self, shouldAddDecorationAt: indexPath) ?? false {
+                guard let viewOfKindName = delegate?.collectionView?(self.collectionView!, layout: self, decorationViewOfKindAt: indexPath) else {
+                    continue
+                }
+                let decorationAttributes = UICollectionViewLayoutAttributes(forDecorationViewOfKind: viewOfKindName, with: indexPath)
+                let cellFrame = layoutAttributes.frame
+                guard let decorationFrame = delegate?.collectionView?(self.collectionView!, layout: self, frameOfDecorationViewAt: indexPath, cellFrame: cellFrame) else {
+                    continue
+                }
+                decorationAttributes.frame = decorationFrame
+                decorationAttributes.zIndex = 1000
+                decorationAttributesList.append(decorationAttributes)
+            }
+        }
+        attrs.append(contentsOf: decorationAttributesList)
 
         return attrs
     }
